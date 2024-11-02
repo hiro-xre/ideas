@@ -23,3 +23,7 @@
   * https://nuxt.com/docs/guide/concepts/server-engine
   * Nitroはunjsのh3を利用して作られたサーバーフレームワーク
     * https://nitro.unjs.io/guide
+
+## アプリケーションのエントリ
+* `nuxt.config.ts`でアプリケーション全体の設定を行う
+  * https://nuxt.com/docs/getting-started/configuration
