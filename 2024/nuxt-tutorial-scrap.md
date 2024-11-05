@@ -27,3 +27,9 @@
 ## アプリケーションのエントリ
 * `nuxt.config.ts`でアプリケーション全体の設定を行う
   * https://nuxt.com/docs/getting-started/configuration
+
+## ルーティング
+* `NuxtPage`はVue Routerの`RouterView`に該当する
+* `NuxtLink`はVue Routerの`RouterLink`に該当する
+* `NuxtLink`の`to="/sample"`の部分は`name`を使用できる
+  * `:to={name: dir-file, params: {id: id}}`
