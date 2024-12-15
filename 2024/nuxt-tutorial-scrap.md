@@ -164,3 +164,124 @@ export default defineNuxtPlugin(() => {
 
 #### ビルド時のミドルウェア設定
 各ページで`definePageMeta`を使う代わりに、`pages:extend`フックの中に名前付きルートミドルウェアを追加することができます。
+
+## レイアウト
+Nuxtは、一般的なUIパターンを再利用可能なレイアウトに抽出するレイアウト・フレームワークを提供します。
+
+### レイアウトを有効にする
+レイアウトは、`app.vue`に`<NuxtLayout>`を追加することで有効になります。
+
+```ts
+<template>
+  <NuxtLayout>
+    <NuxtPage />
+  </NuxtLayout>
+</template>
+```
+
+レイアウトを使用するには
+* `definePageMeta`でページにレイアウト・プロパティを設定します
+* `<NuxtLayout>`の`name`プロパティを設定します
+
+レイアウトが指定されていない場合は、`layouts/default.vue`が使用されます。
+アプリケーションにレイアウトが1つしかない場合は、代わりに`app.vue`を使うことをお勧めします。
+
+### デフォルトレイアウト
+`~layouts/default.vue`を追加します。
+
+`layouts/default.vue`
+```ts
+<template>
+  <div>
+    <p>Some default layout content shared across all pages</p>
+    <slot />
+  </div>
+</template>
+```
+レイアウトファイルでは、ページの内容は`<slot />`コンポーネントに表示されます。
+
+### 名前付きレイアウト
+```ts
+-| layouts/
+---| default.vue
+---| custom.vue
+```
+以下のようにページでカスタムレイアウトを使うことができます。
+`pages/about.vue`
+```ts
+<script setup lang="ts">
+definePageMeta({
+  layout: 'custom'
+})
+</script>
+```
+`<NuxtLayout>`の`name`プロパティを使用すると、すべてのページのデフォルト・レイアウトを直接オーバーライドできます。
+
+`app.vue`
+```ts
+<script setup lang="ts">
+// You might choose this based on an API call or logged-in status
+const layout = "custom";
+</script>
+
+<template>
+  <NuxtLayout :name="layout">
+    <NuxtPage />
+  </NuxtLayout>
+</template>
+```
+ネストされたディレクトリにレイアウトがある場合、レイアウトの名前はそれ自身のパスディレクトリとファイル名に基づき、重複するセグメントは削除されます。
+
+| File | Layout Name |
+| ---- | ---- |
+| ~/layouts/desktop/default.vue | desktop-defaultD |
+| ~/layouts/desktop-base/base.vue | desktop-base |
+| ~/layouts/desktop/index.vue | desktop |
+
+わかりやすくするため、レイアウトのファイル名はレイアウト名と同じにすることをお勧めします。
+| File | Layout Name |
+| ---- | ---- |
+| ~/layouts/desktop/DesktopDefault.vue | desktop-defaultD |
+| ~/layouts/desktop-base/DesktopBase.vue | desktop-base |
+| ~/layouts/desktop/Desktop.vue | desktop |
+
+### レイアウトを動的に変更する
+`setPageLayout` ヘルパーを使うと、動的にレイアウトを変更することもできます。
+```ts
+<script setup lang="ts">
+function enableCustomLayout () {
+  setPageLayout('custom')
+}
+definePageMeta({
+  layout: false,
+});
+</script>
+
+<template>
+  <div>
+    <button @click="enableCustomLayout">Update layout</button>
+  </div>
+</template>
+```
+
+### ページ単位でレイアウトを上書きする
+ページを使用している場合は、`layout: false`を設定し、ページ内で`<NuxtLayout>`コンポーネントを使用することで、完全に制御することができます。
+
+`pages/index.vue`
+```ts
+<script setup lang="ts">
+definePageMeta({
+  layout: false,
+})
+</script>
+
+<template>
+  <div>
+    <NuxtLayout name="custom">
+      <template #header> Some header template content. </template>
+
+      The rest of the page
+    </NuxtLayout>
+  </div>
+</template>
+```
