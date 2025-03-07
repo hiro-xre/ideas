@@ -433,3 +433,169 @@ Nuxt3を支えるサーバーエンジンNitroのおかげで、エッジサイ�
 * nuxtビルドコマンドとNITRO_PRESET=vercel-edge環境変数を使用した**Vercel Edge Functions**
 
 * nuxtビルドコマンドとNITRO_PRESET=netlify-edge環境変数を使用した**Netlify Edge Functions**
+
+## データフェッチ
+Nuxtはアプリケーション内のデータ取得を処理するためのコンパイラを提供します。
+
+Nuxtにはブラウザまたはサーバ環境でデータ・フェッチを実行するための2つのComposableと組み込みライブラリが用意されています。`useFetch`、`useAsyncData`、`$fetch`です。
+
+一言で言うと
+* `$fetch`はネットワーク・リクエストを行う最も簡単な方法です。
+* `useFetch`は`$fetch`のラッパーで、ユニバーサルレンダリングで一度だけデータをフェッチします。
+* `useAsyncData`は`useFetch`に似ていますが、よりきめ細かい制御が可能です。
+
+`useFetch`も`useAsyncData`も、共通のオプションとパターンを持っています。
+
+### useFetchとuseAsyncDataの必要性
+Nuxtはサーバーとクライアントの両方の環境で同型のコードを実行できるフレームワークです。Vueコンポーネントのセットアップ関数で`$fetch`関数を使用してデータフェッチを実行すると、データが2回フェッチされる可能性があります。1回はサーバで（HTMLをレンダリングするために）、もう1回はクライアントで（HTMLがハイドレートされるときに）です。これによりハイドレーションの問題が発生したり、インタラクティブになるまでの時間が長くなったり、予測できない動作が発生したりする可能性があります。
+
+`useFetch`および`useAsyncData`コンポーザブルは、サーバー上でAPIコールが行われた場合、データがペイロードでクライアントに転送されるようにすることでこの問題を解決します。
+
+ペイロードは`useNuxtApp().payload`を通じてアクセス可能なJavaScriptオブジェクトです。これはハイドレーション中にブラウザでコードが実行されたときに、同じデータの再フェッチを回避するためにクライアントで使用されます。
+`app.vue`
+```ts
+<script setup lang="ts">
+const { data } = await useFetch('/api/data')
+
+async function handleFormSubmit() {
+  const res = await $fetch('/api/submit', {
+    method: 'POST',
+    body: {
+      // My form data
+    }
+  })
+}
+</script>
+
+<template>
+  <div v-if="data == null">
+    No data
+  </div>
+  <div v-else>
+    <form @submit="handleFormSubmit">
+      <!-- form input tags -->
+    </form>
+  </div>
+</template>
+```
+
+上記の例では`useFetch`はリクエストがサーバーで発生し、適切にブラウザに転送されることを確認します。`$fetch`にはそのような仕組みはなく、リクエストがブラウザからのみ行われる場合に使用するのがよいでしょう。
+
+#### Suspense
+NuxtはVueの`<Suspense>`コンポーネントを使用して、すべての非同期データがビューで利用可能になる前にナビゲーションが行われないようにします。データ取得のコンポーザブルはこの機能を活用し、呼び出しごとに最適なものを使用するのに役立ちます。
+
+### $fetch
+Nuxtにはofetchライブラリが含まれており、アプリケーション全体で`$fetch`エイリアスとして自動インポートされます。
+`pages/todos.vue`
+```ts
+<script setup lang="ts">
+async function addTodo() {
+  const todo = await $fetch('/api/todos', {
+    method: 'POST',
+    body: {
+      // My todo data
+    }
+  })
+}
+</script>
+```
+
+#### クライアント・ヘッダーをAPIに渡す
+サーバで`useFetch`を呼び出す場合、Nuxtは`useRequestFetch`を使用してクライアントのヘッダとCookieをプロキシします（host のような転送されないヘッダを除く）。
+
+```ts
+<script setup lang="ts">
+const { data } = await useFetch('/api/echo');
+</script>
+```
+
+```ts
+// /api/echo.ts
+export default defineEventHandler(event => parseCookies(event))
+```
+
+あるいは以下の例では、`useRequestHeaders`を使用して、(クライアントを起点とする) サーバ側リクエストからAPIにアクセスしてクッキーを送信する方法を示しています。同型の`$fetch`呼び出しを使用することで、APIエンドポイントがユーザのブラウザによって元々送信されたのと同じCookieヘッダにアクセスできるようにしています。これは`useFetch`を使用していない場合にのみ必要です。
+
+```ts
+<script setup lang="ts">
+const headers = useRequestHeaders(['cookie'])
+
+async function getCurrentUser() {
+  return await $fetch('/api/me', { headers })
+}
+</script>
+```
+
+### useFetch
+`useFetch`コンポーザブルは`$fetch`を内部で使い、setup関数内でSSRセーフなネットワークコールを行います。
+`app.vue`
+```ts
+<script setup lang="ts">
+const { data: count } = await useFetch('/api/count')
+</script>
+
+<template>
+  <p>Page visits: {{ count }}</p>
+</template>
+```
+
+このコンポーザブルは`useAsyncData`コンポーザブルと`$fetch`ユーティリティのラッパーです。
+
+### useAsyncData
+`useAsyncData`コンポーザブルは非同期ロジックをラップし、解決したら結果を返します。
+
+たとえばCMSやサードパーティが独自のクエリ層を提供している場合などです。このような場合は`useAsyncData`を使用して呼び出しをラップすることができます。
+`pages/users.vue`
+```ts
+<script setup lang="ts">
+const { data, error } = await useAsyncData('users', () => myGetFunction('users'))
+
+// This is also possible:
+const { data, error } = await useAsyncData(() => myGetFunction('users'))
+</script>
+```
+
+`pages/users/[id].vue`
+```ts
+<script setup lang="ts">
+const { id } = useRoute().params
+
+const { data, error } = await useAsyncData(`user:${id}`, () => {
+  return myGetFunction('users', { id })
+})
+</script>
+```
+
+`useAsyncData`コンポーザブルは複数の`$fetch`リクエストが完了するのをラップして待ち、結果を処理する素晴らしい方法です。
+
+```ts
+<script setup lang="ts">
+const { data: discounts, status } = await useAsyncData('cart-discount', async () => {
+  const [coupons, offers] = await Promise.all([
+    $fetch('/cart/coupons'),
+    $fetch('/cart/offers')
+  ])
+
+  return { coupons, offers }
+})
+// discounts.value.coupons
+// discounts.value.offers
+</script>
+```
+
+### 戻り値
+`useFetch`と`useAsyncData`の戻り値は同じです。
+
+* `data`: 渡された非同期関数の結果。
+* `refresh`/`execute`: ハンドラー関数から返されたデータをリフレッシュするために使用できる関数。
+* `clear`: データを`undefined`に設定し、エラーを`null`に設定し、ステータスを`idle`に設定し、現在保留中のリクエストをキャンセル済みとしてマークするために使用できる関数。
+* `error`: データフェッチに失敗した場合のエラーオブジェクト
+* `status`: データリクエストのステータスを示す文字列（"idle"、"pending"、"success"、"error"）。
+
+`data`、`error`、`status`は、`<script setup>`の`.value`でアクセス可能なVueの`ref`です。
+デフォルトではNuxtは`refresh`が終了するまで待ってから再実行します。
+
+// TODO: 後で調べる
+* ofetch
+* useRequestFetch
+* useRequestHeaders
