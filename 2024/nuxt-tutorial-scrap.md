@@ -595,7 +595,354 @@ const { data: discounts, status } = await useAsyncData('cart-discount', async ()
 `data`、`error`、`status`は、`<script setup>`の`.value`でアクセス可能なVueの`ref`です。
 デフォルトではNuxtは`refresh`が終了するまで待ってから再実行します。
 
+### オプション
+`useAsyncData`と`useFetch`は同じオブジェクト型を返し、共通のオプションを最後の引数として受け取ります。これらはナビゲーションのブロック、キャッシュ、実行などコンポーザブルの動作を制御するのに役立ちます。
+
+#### Lazy
+デフォルトでデータ取得のコンポーザブルはVueの`Susppense`を使用して、新しいページに移動する前に非同期関数の解決を待ちます。この機能は`lazy`オプションを使用すると、クライアント側のナビゲーションで無視できます。その場合は`status`を使用して手動でロード状態を処理する必要があります。
+`app.vue`
+```ts
+<script setup lang="ts">
+const { status, data: posts } = useFetch('/api/posts', {
+  lazy: true
+})
+</script>
+
+<template>
+  <!-- you will need to handle a loading state -->
+  <div v-if="status === 'pending'">
+    Loading ...
+  </div>
+  <div v-else>
+    <div v-for="post in posts">
+      <!-- do something -->
+    </div>
+  </div>
+</template>
+```
+
+代わりに`useLazyFetch`や`useLazyAsyncData`を便利なメソッドとして使うこともできる。
+
+```ts
+<script setup lang="ts">
+const { status, data: posts } = useLazyFetch('/api/posts')
+</script>
+```
+
+#### クライアントのみのフェッチ
+デフォルトではデータフェッチコンポーザブルは、クライアントとサーバーの両方の環境で非同期機能を実行します。クライアント側でのみ呼び出しを実行するには、サーバーオプションを`false`に設定します。最初のロードではハイドレーションが完了する前にデータはフェッチされないので、保留状態を処理する必要があります。
+
+`lazy`オプションと組み合わせることで、最初のレンダリングで必要とされないデータ（例えばSEO上重要でないデータなど）に有効である。
+
+```ts
+/* This call is performed before hydration */
+const articles = await useFetch('/api/article')
+
+/* This call will only be performed on the client */
+const { status, data: comments } = useFetch('/api/comments', {
+  lazy: true,
+  server: false
+})
+```
+
+`useFetch`コンポーザブルはsetup関数内で呼び出されるか、ライフサイクルフックの関数のトップレベルで直接呼び出されることを意図しています。
+
+#### ペイロードサイズの最小化
+`pick`オプションを使用するとコンポーザブルから返したいフィールドのみを選択することで、HTMLドキュメントに保存されるペイロードサイズを最小限に抑えることができます。
+
+```ts
+<script setup lang="ts">
+/* only pick the fields used in your template */
+const { data: mountain } = await useFetch('/api/mountains/everest', {
+  pick: ['title', 'description']
+})
+</script>
+
+<template>
+  <h1>{{ mountain.title }}</h1>
+  <p>{{ mountain.description }}</p>
+</template>
+```
+
+もっとコントロールが必要な場合や複数のオブジェクトをマッピングする必要がある場合は、`transform`関数を使ってクエリの結果を変更することができます。
+
+#### キャッシュと再フェッチ
+##### Keys
+`useFetch`と`useAsyncData`は同じデータの再フェッチを防ぐためにキーを使用します。
+* `useFetch`は指定されたURLをキーとして使用する。また最後の引数として渡されるオプションでキー値を指定することもできます。
+* `useAsyncData`は最初の引数が文字列の場合、その引数をキーとして使用します。最初の引数がクエリを実行するハンドラ関数の場合、`useAsyncData`のインスタンスのファイル名と行番号に固有のキーが生成されます。
+
+#### リフレッシュと実行
+データを手動でフェッチまたはリフレッシュしたい場合は、コンポーザブルが提供する`execute`または`refresh`関数を使用します。
+
+```ts
+<script setup lang="ts">
+const { data, error, execute, refresh } = await useFetch('/api/users')
+</script>
+
+<template>
+  <div>
+    <p>{{ data }}</p>
+    <button @click="() => refresh()">Refresh data</button>
+  </div>
+</template>
+```
+
+`execute`関数は`refresh`の別名でまったく同じように動作しますが、フェッチが即時でない場合にはよりセマンティックです。
+
+#### Clear
+何らかの理由で`clearNuxtData`に渡す特定のキーを知らなくても、提供されたデータをクリアしたい場合はcomposablesが提供する`clear`関数を使うことができます。
+
+```ts
+<script setup lang="ts">
+const { data, clear } = await useFetch('/api/users')
+
+const route = useRoute()
+watch(() => route.path, (path) => {
+  if (path === '/') clear()
+})
+</script>
+```
+
+#### Watch
+アプリケーション内の他のリアクティブな値が変更されるたびにフェッチ関数を再実行するには、`watch`オプションを使用します。このオプションは1つまたは複数の監視可能な要素に使用できます。
+```ts
+<script setup lang="ts">
+const id = ref(1)
+
+const { data, error, refresh } = await useFetch('/api/users', {
+  /* Changing the id will trigger a refetch */
+  watch: [id]
+})
+</script>
+```
+
+リアクティブな値を見てもフェッチされるURLは変わらないことに注意してください。例えばこの関数が呼び出された瞬間にURLが構築されるため、これはユーザーの同じ初期IDをフェッチし続けます。
+```ts
+<script setup lang="ts">
+const id = ref(1)
+
+const { data, error, refresh } = await useFetch(`/api/users/${id.value}`, {
+  watch: [id]
+})
+</script>
+```
+
+反応値に基づいてURLを変更する必要がある場合は、代わりに`Computed URL`を使用するとよいでしょう。
+
+#### Computed URL
+時にはリアクティブな値からURLを計算し、それらが変更されるたびにデータを更新する必要があるかもしれません。このような場合は各パラメータをリアクティブ値としてアタッチします。Nuxtは自動的にリアクティブ値を使用し、値が変更されるたびに再取得します。
+```ts
+<script setup lang="ts">
+const id = ref(null)
+
+const { data, status } = useLazyFetch('/api/user', {
+  query: {
+    user_id: id
+  }
+})
+</script>
+```
+
+より複雑なURL構築の場合、URL文字列を返す計算ゲッターとしてコールバックを使うことができる。
+
+依存関係が変更されるたびに、新しく構築されたURLを使用してデータがフェッチされます。これを`not-immediate`と組み合わせると、フェッチする前にリアクティブ要素が変更されるまで待つことができます。
+```ts
+<script setup lang="ts">
+const id = ref(null)
+
+const { data, status } = useLazyFetch(() => `/api/users/${id.value}`, {
+  immediate: false
+})
+
+const pending = computed(() => status.value === 'pending');
+</script>
+
+<template>
+  <div>
+    <!-- disable the input while fetching -->
+    <input v-model="id" type="number" :disabled="pending"/>
+
+    <div v-if="status === 'idle'">
+      Type an user ID
+    </div>
+
+    <div v-else-if="pending">
+      Loading ...
+    </div>
+
+    <div v-else>
+      {{ data }}
+    </div>
+  </div>
+</template>
+```
+
+他の反応値が変化したときに強制的に更新する必要がある場合は、他の値を監視することもできます。
+
+#### Not immediate
+`useFetch`コンポーザブルは呼び出された瞬間にデータのフェッチを開始します。これを防ぐにはたとえば`immediate: false`を設定して、ユーザーとの対話を待つようにします。
+
+これによりフェッチのライフサイクルを処理するステータスと、データフェッチを開始する`execute`の両方が必要になります。
+```ts
+<script setup lang="ts">
+const { data, error, execute, status } = await useLazyFetch('/api/comments', {
+  immediate: false
+})
+</script>
+
+<template>
+  <div v-if="status === 'idle'">
+    <button @click="execute">Get data</button>
+  </div>
+
+  <div v-else-if="status === 'pending'">
+    Loading comments...
+  </div>
+
+  <div v-else>
+    {{ data }}
+  </div>
+</template>
+```
+
+より詳細な制御のために、`status`変数は次のようにすることができる：
+
+* `idle`（フェッチが開始されていないとき）
+* `pending`（フェッチが開始されたがまだ完了していないとき）
+* `error`（フェッチが失敗したとき）
+* `success`（フェッチが正常に完了したとき）。
+
+### ヘッダーとクッキーを渡す
+ブラウザで`$fetch`を呼び出すと、クッキーのようなユーザーヘッダが直接APIに送られます。
+
+通常サーバサイドレンダリングの間、セキュリティへの配慮から`$fetch`はユーザのブラウザ・クッキーを含めず、フェッチ・レスポンスからクッキーを渡すこともありません。
+
+しかし、サーバ上の相対URLで`useFetch`を呼び出す場合、Nuxtは`useRequestFetch`を使用してヘッダとクッキーをプロキシします（hostのように転送されることを意図していないヘッダは例外です）。
+
+#### SSRレスポンスでサーバー側APIコールからクッキーを渡す
+内部リクエストからクライアントに戻る、別の方向にクッキーを渡す/プロキシしたい場合、これを自分で処理する必要があります。
+
+`composables/fetch.ts`
+```ts
+import { appendResponseHeader } from 'h3'
+import type { H3Event } from 'h3'
+
+export const fetchWithCookie = async (event: H3Event, url: string) => {
+  /* Get the response from the server endpoint */
+  const res = await $fetch.raw(url)
+  /* Get the cookies from the response */
+  const cookies = res.headers.getSetCookie()
+  /* Attach each cookie to our incoming Request */
+  for (const cookie of cookies) {
+    appendResponseHeader(event, 'set-cookie', cookie)
+  }
+  /* Return the data of the response */
+  return res._data
+}
+```
+
+```ts
+<script setup lang="ts">
+// This composable will automatically pass cookies to the client
+const event = useRequestEvent()
+
+const { data: result } = await useAsyncData(() => fetchWithCookie(event!, '/api/with-cookie'))
+
+onMounted(() => console.log(document.cookie))
+</script>
+```
+
+#### Options APIサポート
+NuxtはOptions API内で`asyncData`フェッチを実行する方法を提供します。これを動作させるには`defineNuxtComponent`でコンポーネント定義をラップする必要があります。
+```ts
+<script>
+export default defineNuxtComponent({
+  /* Use the fetchKey option to provide a unique key */
+  fetchKey: 'hello',
+  async asyncData () {
+    return {
+      hello: await $fetch('/api/hello')
+    }
+  }
+})
+</script>
+```
+
+※ `<script setup>`または`<script setup lang="ts">`を使用するのが、Nuxt3でVueコンポーネントを宣言する推奨方法です。
+
+#### サーバーからクライアントへのデータのシリアライズ
+`useAsyncData`と`useLazyAsyncData`を使用してサーバーで取得したデータをクライアントに転送する場合（Nuxtペイロードを使用する他のすべてのものと同様）、ペイロードはdevalueでシリアライズされます。これにより基本的なJSONだけでなく、正規表現、日付、MapとSet、ref、reactive、shallowRef、shallowReactive、NuxtErrorなどより高度な種類のデータをシリアライズおよび復活/デシリアライズして転送できます。
+
+また、Nuxtがサポートしていない型に対して独自のシリアライザ/デシリアライザを定義することも可能です。詳しくは`useNuxtApp`のドキュメントを参照してください。
+
+#### APIルートからのデータのシリアライズ
+サーバディレクトリからデータをフェッチする場合、レスポンスはJSON.stringifyを使用してシリアライズされます。しかし、シリアライズはJavaScriptのプリミティブ型のみに制限されているため、Nuxtは`$fetch`と`useFetch`の戻り値の型を実際の値と一致するように変換するよう最善を尽くします。
+
+##### 例
+`server/api/foo.ts`
+```ts
+export default defineEventHandler(() => {
+  return new Date()
+})
+```
+
+`app.vue`
+```ts
+<script setup lang="ts">
+// Type of `data` is inferred as string even though we returned a Date object
+const { data } = await useFetch('/api/foo')
+</script>
+```
+
+##### カスタムシリアライザー関数
+シリアライズの動作をカスタマイズするには、返されたオブジェクトにtoJSON関数を定義します。toJSONメソッドを定義するとNuxtは関数の戻り値の型を尊重し、型の変換を試みません。
+
+`server/api/bar.ts`
+```ts
+export default defineEventHandler(() => {
+  const data = {
+    createdAt: new Date(),
+
+    toJSON() {
+      return {
+        createdAt: {
+          year: this.createdAt.getFullYear(),
+          month: this.createdAt.getMonth(),
+          day: this.createdAt.getDate(),
+        },
+      }
+    },
+  }
+  return data
+})
+```
+
+`app.vue`
+```ts
+<script setup lang="ts">
+// Type of `data` is inferred as
+// {
+//   createdAt: {
+//     year: number
+//     month: number
+//     day: number
+//   }
+// }
+const { data } = await useFetch('/api/bar')
+</script>
+```
+
+
+
+
+
+
 // TODO: 後で調べる
 * ofetch
 * useRequestFetch
 * useRequestHeaders
+* lazy（useLazyFetch）いつ使う？
+* pick説明がわからない
+* SSRレスポンスでサーバー側APIコールからクッキーを渡す
+* サーバーからクライアントへのデータのシリアライズ
