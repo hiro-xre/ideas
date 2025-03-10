@@ -939,8 +939,6 @@ const { data } = await useFetch('/api/bar')
 
 
 // TODO: 後で調べる
-* ofetch
-* useRequestFetch
 * useRequestHeaders
 * lazy（useLazyFetch）いつ使う？
 * pick説明がわからない
