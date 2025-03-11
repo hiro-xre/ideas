@@ -600,6 +600,7 @@ const { data: discounts, status } = await useAsyncData('cart-discount', async ()
 
 #### Lazy
 デフォルトでデータ取得のコンポーザブルはVueの`Susppense`を使用して、新しいページに移動する前に非同期関数の解決を待ちます。この機能は`lazy`オプションを使用すると、クライアント側のナビゲーションで無視できます。その場合は`status`を使用して手動でロード状態を処理する必要があります。
+例えば、遷移先のページで`useFetch`にてデータ取得を行う場合、Nuxtは遷移先でデータ取得が完了するまでページ遷移が行われません。
 `app.vue`
 ```ts
 <script setup lang="ts">
@@ -649,6 +650,7 @@ const { status, data: comments } = useFetch('/api/comments', {
 
 #### ペイロードサイズの最小化
 `pick`オプションを使用するとコンポーザブルから返したいフィールドのみを選択することで、HTMLドキュメントに保存されるペイロードサイズを最小限に抑えることができます。
+Nuxtはサーバーで取得したデータを、HTMLドキュメントのscriptタグ内に保存しています。
 
 ```ts
 <script setup lang="ts">
@@ -932,15 +934,3 @@ export default defineEventHandler(() => {
 const { data } = await useFetch('/api/bar')
 </script>
 ```
-
-
-
-
-
-
-// TODO: 後で調べる
-* useRequestHeaders
-* lazy（useLazyFetch）いつ使う？
-* pick説明がわからない
-* SSRレスポンスでサーバー側APIコールからクッキーを渡す
-* サーバーからクライアントへのデータのシリアライズ
